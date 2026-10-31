@@ -19,3 +19,4 @@ tsconfig.tsbuildinfo
 
 # 面试准备材料，不入公开仓库
 docs/面试深挖防御指南.md
+dump.rdb/
