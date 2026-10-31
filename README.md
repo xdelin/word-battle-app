@@ -10,10 +10,12 @@
 | ![首页](docs/screenshots/01-home.png) | ![词书选择](docs/screenshots/02-courses.png) |
 | **课程关卡** | **FSRS 复习（评分界面）** |
 | ![课程关卡](docs/screenshots/03-course-detail.png) | ![复习评分](docs/screenshots/07-review-rating.png) |
-| **PK 大厅（词力榜）** | **复习卡片** |
-| ![PK 大厅](docs/screenshots/05-pk-lobby.png) | ![复习卡片](docs/screenshots/04-review.png) |
-| **个人中心** | |
-| ![个人中心](docs/screenshots/06-profile.png) | |
+| **PK 对战** | **好友对战房间** |
+| ![PK 对战](docs/screenshots/08-pk-battle.png) | ![好友房间](docs/screenshots/10-pk-room.png) |
+| **对战结算（错词自动加入复习）** | **找词游戏** |
+| ![对战结算](docs/screenshots/11-pk-result.png) | ![找词游戏](docs/screenshots/09-word-search.png) |
+| **PK 大厅（词力榜）** | **个人中心** |
+| ![PK 大厅](docs/screenshots/05-pk-lobby.png) | ![个人中心](docs/screenshots/06-profile.png) |
 
 ## 核心功能
 
