@@ -143,6 +143,44 @@ export async function fetchTodayCompletedLessons(): Promise<number> {
   return res.completedToday;
 }
 
+// ====== 个人统计 / 签到（BitMap）======
+
+export interface UserStatsDto {
+  studyDays: number;
+  wordsLearned: number;
+  totalXp: number;
+  powerWordRank: number;
+  consecutiveDays: number;
+}
+
+export interface CheckinDto {
+  justChecked: boolean;
+  checkedToday: boolean;
+  totalDays: number;
+  consecutiveDays: number;
+  monthDays: number;
+  checkedDays: number[];
+}
+
+export async function fetchUserStats(token?: string): Promise<UserStatsDto> {
+  return apiFetch<UserStatsDto>("/api/users/me/stats", {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function fetchCheckin(token?: string): Promise<CheckinDto> {
+  return apiFetch<CheckinDto>("/api/users/me/checkin", {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+}
+
+export async function doCheckin(token?: string): Promise<CheckinDto> {
+  return apiFetch<CheckinDto>("/api/users/me/checkin", {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
+  });
+}
+
 // ====== 关卡详情 ======
 
 export interface OptionDto {
@@ -452,7 +490,7 @@ export async function pkStartGame(userId: string, roomId: string): Promise<PkQue
 
 export async function pkSubmitAnswer(params: {
   userId: string; roomId: string; questionId: string;
-  selectedOption: number; timeSpent: number;
+  selectedOption: number; timeSpent: number; requestId?: string;
 }): Promise<SideResultDto> {
   return apiFetch<SideResultDto>("/api/pk/answers", {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -472,7 +510,7 @@ export async function pkStartNpc(params: {
 
 export async function pkSubmitNpcAnswer(params: {
   userId: string; roomId: string; questionId: string;
-  selectedOption: number; timeSpent: number;
+  selectedOption: number; timeSpent: number; requestId?: string;
 }): Promise<NpcSubmitResultDto> {
   return apiFetch<NpcSubmitResultDto>("/api/pk/npc/answer", {
     method: "POST", headers: { "Content-Type": "application/json" },

@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
-import { authMeJava, authLogoutJava } from "@/lib/api-client";
+import { ChevronRight, Flame } from "lucide-react";
+import { authMeJava, authLogoutJava, fetchUserStats, fetchCheckin, doCheckin, UserStatsDto, CheckinDto } from "@/lib/api-client";
 
 interface UserInfo {
   id: string;
@@ -17,6 +17,9 @@ export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<UserStatsDto | null>(null);
+  const [checkin, setCheckin] = useState<CheckinDto | null>(null);
+  const [checkinBusy, setCheckinBusy] = useState(false);
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -28,6 +31,9 @@ export default function ProfilePage() {
       .then((d) => {
         if (d.success && d.user) {
           setUser(d.user);
+          // 统计与签到并行拉取；失败静默（页面仍显示 0）
+          fetchUserStats(token).then(setStats).catch(() => {});
+          fetchCheckin(token).then(setCheckin).catch(() => {});
         } else {
           // token 无效，清掉
           localStorage.removeItem("token");
@@ -37,6 +43,23 @@ export default function ProfilePage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  const handleCheckin = async () => {
+    if (checkinBusy || checkin?.checkedToday) return;
+    setCheckinBusy(true);
+    try {
+      const token = localStorage.getItem("token") ?? undefined;
+      const next = await doCheckin(token ?? undefined);
+      setCheckin(next);
+      // 学习天数与连签随签到变化，同步刷新四格
+      const s = await fetchUserStats(token ?? undefined);
+      setStats(s);
+    } catch {
+      // 签到失败不阻塞页面
+    } finally {
+      setCheckinBusy(false);
+    }
+  };
 
   const handleLogout = async () => {
     // 先通知后端拉黑 token（失败不阻塞），再清本地登录态
@@ -48,11 +71,11 @@ export default function ProfilePage() {
     router.refresh();
   };
 
-  const stats = [
-    { value: 0, label: "学习天数" },
-    { value: 0, label: "掌握单词" },
-    { value: 0, label: "总积分" },
-    { value: 0, label: "词力值" },
+  const statValues = [
+    { value: stats?.studyDays ?? 0, label: "学习天数" },
+    { value: stats?.wordsLearned ?? 0, label: "掌握单词" },
+    { value: stats?.totalXp ?? 0, label: "总积分" },
+    { value: stats?.powerWordRank ?? 0, label: "词力值" },
   ];
 
   const settings = [
@@ -115,8 +138,8 @@ export default function ProfilePage() {
         </div>
 
         {/* 统计 */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-10">
-          {stats.map(s => (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          {statValues.map(s => (
             <div
               key={s.label}
               className="rounded-2xl border border-gray-100 bg-white p-5 text-center"
@@ -125,6 +148,50 @@ export default function ProfilePage() {
               <div className="mt-1 text-[12px] text-gray-400">{s.label}</div>
             </div>
           ))}
+        </div>
+
+        {/* 每日签到（Redis BitMap） */}
+        <div className="rounded-3xl border border-gray-100 bg-white p-6 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <Flame className={`h-5 w-5 ${(checkin?.consecutiveDays ?? 0) > 0 ? "text-orange-500" : "text-gray-300"}`} />
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">每日签到</h3>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  已连续签到 <span className="font-medium text-gray-700">{checkin?.consecutiveDays ?? 0}</span> 天
+                  · 本月 <span className="font-medium text-gray-700">{checkin?.monthDays ?? 0}</span> 天
+                  · 累计 <span className="font-medium text-gray-700">{checkin?.totalDays ?? 0}</span> 天
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleCheckin}
+              disabled={checkinBusy || (checkin?.checkedToday ?? false)}
+              className={`h-10 px-5 rounded-full text-sm font-medium transition-colors ${
+                checkin?.checkedToday
+                  ? "bg-gray-100 text-gray-400 cursor-default"
+                  : "bg-gray-900 text-white hover:bg-gray-700"
+              }`}
+            >
+              {checkin?.checkedToday ? "今日已签到" : checkinBusy ? "签到中…" : "签到"}
+            </button>
+          </div>
+          {/* 本月日历点阵 */}
+          <div className="mt-5 flex flex-wrap gap-1.5">
+            {Array.from({ length: new Date().getDate() }, (_, i) => i + 1).map(day => (
+              <div
+                key={day}
+                title={`${day} 日`}
+                className={`h-5 w-5 rounded flex items-center justify-center text-[10px] tabular-nums ${
+                  checkin?.checkedDays?.includes(day)
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-gray-50 text-gray-300"
+                }`}
+              >
+                {day}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* 学习统计区 */}

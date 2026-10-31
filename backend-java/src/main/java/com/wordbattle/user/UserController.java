@@ -3,6 +3,7 @@ package com.wordbattle.user;
 import com.wordbattle.common.ApiResult;
 import com.wordbattle.user.dto.DailyGoalRequest;
 import com.wordbattle.user.dto.UserSettingsResponse;
+import com.wordbattle.user.dto.UserStatsResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,6 +34,12 @@ public class UserController {
     @GetMapping("/me/today-lessons")
     public ApiResult<Map<String, Long>> getTodayLessons() {
         return ApiResult.ok(Map.of("completedToday", userService.countTodayCompletedLessons()));
+    }
+
+    /** 个人页统计四格：学习天数 / 掌握单词 / 总积分 / 词力值（+ 连签天数）。 */
+    @GetMapping("/me/stats")
+    public ApiResult<UserStatsResponse> getStats() {
+        return ApiResult.ok(userService.getStats());
     }
 
     /** 更新每日目标关卡数（1~50）。 */

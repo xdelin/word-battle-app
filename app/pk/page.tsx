@@ -567,11 +567,13 @@ export default function PKPage() {
 
       const timeSpent = isTimeout ? TIME_PER_QUESTION_MS : Date.now() - startedAtRef.current;
       setSelected(optionIndex);
+      // 确定性幂等键：同一题的任何重试/重发都复用同一个键，后端 Redis Lua 幂等去重
+      const requestId = `${player.id}:${roomId}:${q.id}`;
 
       if (mode === "npc") {
         let reveal: { user: { isCorrect: boolean; score: number }; npc: { isCorrect: boolean; score: number }; correctIndex: number };
         try {
-          const j = await pkSubmitNpcAnswer({ userId: player.id, roomId, questionId: q.id, selectedOption: optionIndex, timeSpent });
+          const j = await pkSubmitNpcAnswer({ userId: player.id, roomId, questionId: q.id, selectedOption: optionIndex, timeSpent, requestId });
           reveal = {
             user: { isCorrect: j.user.isCorrect, score: j.user.score },
             npc: { isCorrect: j.npc.isCorrect, score: j.npc.score },
@@ -592,7 +594,7 @@ export default function PKPage() {
       } else {
         // 真人对战：先把自己的答案落库；揭晓由 polling 决定
         try {
-          await pkSubmitAnswer({ userId: player.id, roomId, questionId: q.id, selectedOption: optionIndex, timeSpent });
+          await pkSubmitAnswer({ userId: player.id, roomId, questionId: q.id, selectedOption: optionIndex, timeSpent, requestId });
         } catch (e) {
           setError("提交失败");
         }

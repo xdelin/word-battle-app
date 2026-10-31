@@ -54,6 +54,7 @@ public class PkService {
     private final PkUserAnswerRepository answerRepository;
     private final PkUserEnsure userEnsure;
     private final LeaderboardService leaderboard;
+    private final AnswerIdempotencyService idempotency;
     private final PkSocketHandler pkSocket;
     private final ObjectMapper objectMapper;
     private final JsonbHelper jsonb;
@@ -65,6 +66,7 @@ public class PkService {
                      PkUserAnswerRepository answerRepository,
                      PkUserEnsure userEnsure,
                      LeaderboardService leaderboard,
+                     AnswerIdempotencyService idempotency,
                      PkSocketHandler pkSocket,
                      ObjectMapper objectMapper,
                      JsonbHelper jsonb,
@@ -75,6 +77,7 @@ public class PkService {
         this.answerRepository = answerRepository;
         this.userEnsure = userEnsure;
         this.leaderboard = leaderboard;
+        this.idempotency = idempotency;
         this.pkSocket = pkSocket;
         this.objectMapper = objectMapper;
         this.jsonb = jsonb;
@@ -191,6 +194,28 @@ public class PkService {
                 .orElseThrow(() -> new EntityNotFoundException("Question not found"));
         UUID userId = UUID.fromString(req.userId());
 
+        // 幂等门闩：同一 requestId 只有首个请求能进来，重复请求直接返回上次结果（不打 DB）
+        String requestId = req.requestId();
+        if (requestId != null && !requestId.isBlank()) {
+            AnswerIdempotencyService.Claim claim = idempotency.claim(requestId);
+            if (claim.kind() == AnswerIdempotencyService.Kind.DUPLICATE) {
+                if (claim.cachedJson() != null) {
+                    return readCachedResult(claim.cachedJson());
+                }
+                // 占位但结果还没回写（首个请求仍在途）：短暂等待落库，等不到按重复作答处理
+                PkUserAnswer existing = null;
+                for (int i = 0; i < 3 && existing == null; i++) {
+                    try { Thread.sleep(100); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                    existing = answerRepository.findByUserIdAndQuestionId(userId, questionId).orElse(null);
+                }
+                if (existing != null) {
+                    return new SideResult(Boolean.TRUE.equals(existing.getIsCorrect()),
+                            existing.getScore(), existing.getTimeSpent() == null ? 0 : existing.getTimeSpent());
+                }
+                throw new IllegalArgumentException("Already answered");
+            }
+        }
+
         if (answerRepository.findByUserIdAndQuestionId(userId, questionId).isPresent()) {
             throw new IllegalArgumentException("Already answered");
         }
@@ -202,23 +227,38 @@ public class PkService {
 
         saveAnswer(req.userId(), req.roomId(), req.questionId(), req.selectedOption(), isCorrect, timeSpent, score);
         roomUserRepository.addScore(req.roomId(), req.userId(), score, isCorrect ? 1 : 0);
+        SideResult result = new SideResult(isCorrect, score, timeSpent);
         // WebSocket 推送对手"已作答"（前端收到后立即拉取，轮询作降级）。
         // 必须等事务提交后再推：否则前端立即轮询会读到提交前的旧数据。
-        String roomIdStr = req.roomId();
-        String questionIdStr = req.questionId();
-        String userIdStr = req.userId();
+        // 幂等结果回写同理：保证重复请求拿到的一定是已提交的数据。
+        String requestIdFinal = requestId;
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    pkSocket.notifyOpponentAnswered(roomIdStr, questionIdStr, userIdStr);
+                    pkSocket.notifyOpponentAnswered(req.roomId(), req.questionId(), req.userId());
+                    if (requestIdFinal != null && !requestIdFinal.isBlank()) {
+                        idempotency.storeResult(requestIdFinal, result);
+                    }
                 }
             });
         } else {
-            pkSocket.notifyOpponentAnswered(roomIdStr, questionIdStr, userIdStr);
+            pkSocket.notifyOpponentAnswered(req.roomId(), req.questionId(), req.userId());
+            if (requestIdFinal != null && !requestIdFinal.isBlank()) {
+                idempotency.storeResult(requestIdFinal, result);
+            }
         }
 
-        return new SideResult(isCorrect, score, timeSpent);
+        return result;
+    }
+
+    /** 重复请求命中 Redis 里已回写的结果 JSON。 */
+    private SideResult readCachedResult(String json) {
+        try {
+            return objectMapper.readValue(json, SideResult.class);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Already answered");
+        }
     }
 
     private int getTimePerQuestionMs(UUID roomId) {

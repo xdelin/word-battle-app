@@ -19,4 +19,6 @@ tsconfig.tsbuildinfo
 
 # 面试准备材料，不入公开仓库
 docs/面试深挖防御指南.md
-dump.rdb/
+
+# Redis 快照（本地以 backend-java 为工作目录起过 Redis）
+dump.rdb

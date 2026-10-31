@@ -22,6 +22,7 @@
 - **闯关学习**：6 本分级词书（四六级 / 考研 / 托福 / 雅思，共 10,689 词、2,918 关），单元-关卡两级结构，选择 / 听音 / 拼写等题型，生命值 + XP 积分。
 - **FSRS 复习调度**：维护 stability / difficulty 双变量与 new → learning → review 状态机，按 4 档评分（忘记 / 困难 / 良好 / 简单）动态计算下次复习时间，到期队列 + 熟记移除。
 - **单词 PK 对战**：人机对战、好友房间（房间码邀请）、随机匹配；按词书难度分组卷；速度分 + 正确率计分；错题自动进入复习队列。
+- **每日签到**：Redis BitMap 每用户每天仅占 1 bit（一年约 46 字节），累计 / 连续 / 本月签到天数，个人页日历可视化。
 - **词力值排行榜**：Elo 积分制，Redis ZSET 实时排名。
 - **词库 LLM 富化**：批量调用 LLM 生成例句、搭配、近义辨析等深度内容，自研并发池 + 限速 + 单条失败隔离，结果校验后写回 JSONB。
 
@@ -35,11 +36,16 @@ Spring Boot 3.3.5 ────────────────┘
    │            │                │
    ▼            ▼                ▼
 PostgreSQL   Redis            LLM API
-(JPA/JSONB)  (ZSET 排行榜 /     (词库富化，
-             JWT 登出黑名单)    离线批量管线)
+(JPA/JSONB)  (缓存三件套 /       (词库富化，
+             BitMap 签到 /      离线批量管线)
+             Lua 幂等 / ZSET 排行榜 /
+             JWT 登出黑名单)
 ```
 
 - **认证**：JWT 无状态认证（jBCrypt 存储密码），登出后将 token 写入 Redis 黑名单主动失效；未登录访问降级为内置演示用户。
+- **缓存三件套**：词书 / 统计等全局只读接口走统一 `CacheService`——空结果短 TTL 占位防**穿透**、`SET NX EX` 互斥 + 双检查重建防**击穿**、TTL 随机抖动防**雪崩**；响应带 `X-Cache: HIT/MISS/NULL/DEGRADED` 头，Redis 故障 fail-open 直查库。用户级数据（课程树含个人进度）明确不走全局缓存。
+- **提交幂等（Lua）**：前端按 `(userId, roomId, questionId)` 生成确定性幂等键，Lua 脚本原子"检查 + 占位"，重复提交直接返回已存结果、不打 DB；结果回写在事务提交后（`afterCommit`）执行，Redis 故障退化为 DB 查重兜底。
+- **每日签到（BitMap）**：`SETBIT` 返回置位前旧值，仅旧值为 0 时才 `INCR` 累计计数器——天然防并发重复累计；连续天数为纯函数（可单测）；月历数据一次 pipeline 取回，避免逐天 GETBIT 往返。
 - **PK 并发正确性**：加入房间走 `SELECT ... FOR UPDATE` 悲观锁串行化，配合 `(room_id, seat_no)` 部分唯一索引与 `(room_id, user_id)` 唯一约束兜底——锁保证效率，约束保证正确性。
 - **实时对战**：提交答案走 HTTP POST 保证幂等落库，事务提交后（`afterCommit`）通过 WebSocket 广播"对手已作答"事件；前端保留 700ms 轮询作为降级，断线 3s 自动重连。
 - **复习调度**：FSRS 简化版独立为纯函数类（`FsrsCalculator`），接口稳定、可替换为完整 FSRS-6 实现。
@@ -51,9 +57,9 @@ PostgreSQL   Redis            LLM API
 | --- | --- |
 | 前端 | Next.js 14（App Router）、React 18、TypeScript、Tailwind CSS、Zustand |
 | 后端 | Spring Boot 3.3.5、Spring Data JPA（JSONB）、Bean Validation、jjwt |
-| 数据 | PostgreSQL（JSONB 半结构化字段）、Redis（ZSET / String） |
+| 数据 | PostgreSQL（JSONB 半结构化字段）、Redis（缓存三件套 / BitMap / Lua / ZSET） |
 | 实时 | 原生 WebSocket（`TextWebSocketHandler`）+ HTTP 轮询降级 |
-| 测试 | JUnit 5 + Mockito，32 个单元测试覆盖 FSRS 调度、PK 组卷/Elo、认证 |
+| 测试 | JUnit 5 + Mockito，47 个单元测试覆盖 FSRS 调度、PK 组卷/Elo、缓存行为、签到连续天数、认证 |
 | 部署 | Docker 多阶段构建、docker-compose（PostgreSQL + Redis + 后端 + 前端）、GitHub Actions CI |
 
 ## 快速开始
@@ -94,7 +100,7 @@ npm run dev
 
 ```bash
 cd backend-java
-mvn test    # 32 个单元测试：FSRS 状态机、组卷/干扰项、Elo 计分、JWT 认证分支
+mvn test    # 47 个单元测试：FSRS 状态机、组卷/干扰项、Elo 计分、缓存三件套行为、签到连续天数、JWT 认证分支
 ```
 
 ## 项目结构
