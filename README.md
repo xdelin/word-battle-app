@@ -103,6 +103,26 @@ cd backend-java
 mvn test    # 47 个单元测试：FSRS 状态机、组卷/干扰项、Elo 计分、缓存三件套行为、签到连续天数、JWT 认证分支
 ```
 
+## 性能
+
+仓库内带零依赖压测脚本（Node 内置 http 模块，`scripts/bench.mjs`）。本机实测（macOS arm64，JDK 21 + PostgreSQL 18 + Redis 7.4 同机部署，n=2000、c=50、keep-alive 连接）：
+
+| 接口 | QPS | P50 | P95 | P99 |
+| --- | --- | --- | --- | --- |
+| GET /api/books（Redis 缓存 HIT） | 6,708 | 6ms | 13ms | 20ms |
+| GET /api/books/library/stats（缓存 HIT） | 7,424 | 5ms | 10ms | 33ms |
+| GET /api/review（最重查询，无缓存） | 633 | 76ms | 113ms | 150ms |
+| GET /api/books/18/course-tree | 508 | 94ms | 166ms | 207ms |
+
+- **缓存收益**：词书接口回源 20.3ms → 缓存命中 1.3ms（15×），统计接口 26.3ms → 0.86ms（31×）；Redis 故障 fail-open 直查库，接口仍可用。
+- **慢查询优化（压测驱动）**：首版压测暴露课程树接口仅 **15 QPS / P50 3.2s**——`EXPLAIN ANALYZE` 定位到关卡数关联子查询 `(select count(*) from challenges where lesson_id = l.id)` 逐关卡全表扫 challenges（2.9 万行 × 385 关 ≈ 每请求 1100 万行，DB 耗时 271ms）；补 `challenges(lesson_id)` 索引后 DB 耗时 **271ms → 3.05ms（89×）**，接口复测 **15 → 508 QPS（34×）**。迁移文件：`db/migration/002_challenges_lesson_idx.sql`。
+- **资源水位**：50 并发下 Postgres 连接数稳定在 11（Hikari 池 10 打满 + 采样连接）；JVM 105 次 Young GC、0 次 Full GC。
+
+```bash
+node scripts/bench.mjs                                    # 四个接口全跑
+BENCH_N=2000 BENCH_C=50 node scripts/bench.mjs /api/review  # 自定义参数 / 单接口
+```
+
 ## 项目结构
 
 ```

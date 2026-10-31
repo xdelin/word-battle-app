@@ -1035,6 +1035,13 @@ CREATE INDEX user_mastered_words_user_word_unique ON public.user_mastered_words 
 
 
 --
+-- Name: idx_challenges_lesson_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_challenges_lesson_id ON public.challenges USING btree (lesson_id);
+
+
+--
 -- Name: card_reviews card_reviews_card_id_cards_id_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 

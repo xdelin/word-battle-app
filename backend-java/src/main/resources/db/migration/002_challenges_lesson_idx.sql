@@ -1,0 +1,11 @@
+-- 002: 课程树关卡数关联子查询索引（压测优化，2026-10-31）
+--
+-- 背景：LessonRepository.findTreeLessons 里
+--   (select count(*) from challenges c where c.lesson_id = l.id)
+-- 是逐关卡的关联子查询；challenges(lesson_id) 无索引时每个关卡都全表扫
+-- challenges（约 2.9 万行）。一本 385 关的词书 = 每次课程树请求扫约 1100 万行，
+-- EXPLAIN ANALYZE 实测 DB 耗时 271ms，50 并发下接口 P50 3.2s / 15 QPS。
+--
+-- 建索引后：子查询走 Index Only Scan，DB 耗时 271ms -> 3.05ms（89 倍），
+-- 接口复测 508 QPS / P50 94ms（34 倍）。
+CREATE INDEX IF NOT EXISTS idx_challenges_lesson_id ON challenges(lesson_id);
