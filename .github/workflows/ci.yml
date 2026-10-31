@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (Maven test)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: word_battle
+          POSTGRES_USER: wordbattle
+          POSTGRES_PASSWORD: wordbattle
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U wordbattle -d word_battle"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/word_battle
+      SPRING_DATASOURCE_USERNAME: wordbattle
+      SPRING_DATASOURCE_PASSWORD: wordbattle
+      SPRING_DATA_REDIS_HOST: localhost
+      JWT_SECRET: ci-test-secret-key-for-pipeline-only-32chars!!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Test
+        working-directory: backend-java
+        run: mvn -B test
+
+  frontend:
+    name: Frontend (tsc + build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build

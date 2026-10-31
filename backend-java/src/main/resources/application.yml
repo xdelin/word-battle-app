@@ -1,0 +1,41 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: word-battle-backend
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/word_battle
+    username: changdelin
+    password:
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+app:
+  cors:
+    allowed-origins: http://localhost:3000,http://localhost:3001
+  test-user-id: 550e8400-e29b-41d4-a716-446655440000
+  jwt:
+    secret: ${JWT_SECRET:your-super-secret-jwt-key-change-this-in-production-min-32-chars-please}
+    expiration-days: 30
+  # LLM enrich（火山方舟 coding 接入点，GLM-5.2）
+  llm:
+    base-url: ${LLM_BASE_URL:https://ark.cn-beijing.volces.com/api/coding/v3}
+    api-key: ${LLM_API_KEY:}
+    model: ${LLM_MODEL:glm-5.2}

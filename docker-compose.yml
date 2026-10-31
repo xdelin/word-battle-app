@@ -1,0 +1,60 @@
+# 一键起全套：Postgres(空库自动灌 schema) + Redis + Java 后端 + Next.js 前端
+# 用法：docker compose up --build
+#
+# 说明：
+#   - 前端 NEXT_PUBLIC_JAVA_API_URL 指向宿主机 localhost:8080（浏览器直连后端）。
+#     生产建议前后端同域（网关/反代），浏览器与 SSR 都走同一路径。
+#   - 后端通过 Spring 标准环境变量覆盖 application.yml（relaxed binding）。
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: word_battle
+      POSTGRES_USER: wordbattle
+      POSTGRES_PASSWORD: wordbattle
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./backend-java/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wordbattle -d word_battle"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: ./backend-java
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/word_battle
+      SPRING_DATASOURCE_USERNAME: wordbattle
+      SPRING_DATASOURCE_PASSWORD: wordbattle
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-min-32-chars-please!!}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_JAVA_API_URL: http://localhost:8080
+    depends_on:
+      - app
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
